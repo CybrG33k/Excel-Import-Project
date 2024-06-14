@@ -7,8 +7,8 @@ if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
 Import-Module ImportExcel
 
 # Define the file path
-$filePath = "D:\output.csv"
-$outputDir = "D:\"
+$filePath = "C:\your-file-path.csv"
+$outputDir = "C:\your-output-directory"
 
 # Import the CSV file
 $data = Import-Csv -Path $filePath
