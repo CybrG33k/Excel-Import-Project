@@ -1,0 +1,3 @@
+This Powershell automation was created for a work project, the workflow is to pull data from a central .csv file, and create new excel files based on a unique identifier in the .csv file. 
+In my case, working with CyberArk, this would be the safe owner's name, creating a remediation list of non-compliant accounts. Each row created for <safe owner> would be highlighted red and have a column added to reference the ticket tracking number to fix their account.
+This can be run every day, either adding a new row to the existing excel created, or if their excel file is not found, it would create a new one. It looks for new values by a unique identifier, if that field is blank, it checks a secondary field.
