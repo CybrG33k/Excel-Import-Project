@@ -9,12 +9,7 @@ Import-Module ImportExcel
 # Define the file path
 $filePath = "C:\your-file-path.csv"
 $outputDir = "C:\your-output-directory"
-
-# Import the CSV file
-$data = Import-Csv -Path $filePath
-
-# Get unique safe owners
-$safeOwners = $data | Select-Object -ExpandProperty SafeOwnerName | Sort-Object -Unique
+$logFilePath = "D:\your-update_log-directory.txt"
 
 # Function to apply "Bad" style
 function Apply-BadStyle {
@@ -27,15 +22,44 @@ function Apply-BadStyle {
     $excelPackage = Open-ExcelPackage -Path $filePath
     $worksheet = $excelPackage.Workbook.Worksheets["Sheet1"]
     for ($row = $rowStart; $row -le $rowEnd; $row++) {
-        Set-CellStyle -WorkSheet $worksheet -Row $row -LastColumn 'N' -Pattern 'Solid' -Color ([System.Drawing.Color]::FromArgb(255, 255, 199, 206))  # LightSalmon color
+        Set-CellStyle -WorkSheet $worksheet -Row $row -LastColumn 'Z' -Pattern 'Solid' -Color ([System.Drawing.Color]::FromArgb(255, 240, 128, 128))  # LightSalmon color
     }
     Close-ExcelPackage $excelPackage
+}
+
+# Import the CSV file
+$data = Import-Csv -Path $filePath
+
+# Get unique safe owners
+$safeOwners = $data | Select-Object -ExpandProperty SafeOwnerName | Sort-Object -Unique
+
+# Clear the log file if it exists
+if (Test-Path $logFilePath) {
+    Remove-Item $logFilePath
 }
 
 # Loop through each safe owner and create or update Excel files
 foreach ($owner in $safeOwners) {
     # Filter the data for the current safe owner
     $ownerData = $data | Where-Object { $_.SafeOwnerName -eq $owner }
+
+    # Create a new array to hold modified objects with the new column
+    $ownerDataArray = @()
+
+    foreach ($row in $ownerData) {
+        # Create a new custom object with "ServiceNow reference" as the first column
+        $newRow = [PSCustomObject]@{
+            "ServiceNow reference" = ""
+        }
+        
+        # Add the existing columns from the original row
+        $row.PSObject.Properties | ForEach-Object {
+            Add-Member -InputObject $newRow -MemberType NoteProperty -Name $_.Name -Value $_.Value
+        }
+
+        # Add the modified row to the array
+        $ownerDataArray += $newRow
+    }
 
     # Create the new file path
     $newFilePath = Join-Path -Path $outputDir -ChildPath "$($owner)_RemediationList.xlsx"
@@ -47,9 +71,10 @@ foreach ($owner in $safeOwners) {
 
         # Find new rows to add based on unique identifiers
         $existingIds = $existingData | Select-Object -ExpandProperty CisarID
-        $newRows = $ownerData | Where-Object {
+        $existingAddresses = $existingData | Select-Object -ExpandProperty SystemAddress
+        $newRows = $ownerDataArray | Where-Object {
             ($_."CisarID" -ne "" -and $existingIds -notcontains $_."CisarID") -or
-            ($_."CisarID" -eq "" -and $existingData | Where-Object { $_."SystemAddress" -eq $_."SystemAddress" } -eq $null)
+            ($_."CisarID" -eq "" -and $_."SystemAddress" -ne "" -and $existingAddresses -notcontains $_."SystemAddress")
         }
 
         if ($newRows) {
@@ -67,32 +92,24 @@ foreach ($owner in $safeOwners) {
             $rowEnd = $rowStart + $newRowsCount - 1
             Apply-BadStyle -filePath $newFilePath -rowStart $rowStart -rowEnd $rowEnd
 
-            # Notify that the safe owner's file has been updated
-            Write-Output "Updated file for Safe Owner: $owner"
+            # Log the update
+            Add-Content -Path $logFilePath -Value "Updated file for Safe Owner: $owner"
         }
     } else {
-        # Insert the "ServiceNow INC reference" column at the beginning
-        $ownerData = $ownerData | ForEach-Object {
-            $newObject = [PSCustomObject]@{"ServiceNow INC reference" = ""}
-            foreach ($property in $_.PSObject.Properties) {
-                $newObject | Add-Member -MemberType NoteProperty -Name $property.Name -Value $property.Value
-            }
-            $newObject
-        }
-
         # Export the filtered data to a new Excel file with autofit and table formatting
-        $ownerData | Export-Excel -Path $newFilePath -AutoSize -TableName "RemediationList" -TableStyle Light15
+        $ownerDataArray | Export-Excel -Path $newFilePath -AutoSize -TableName "RemediationList" -TableStyle Light15
 
         # Apply "bad" cell style to new rows
-        $rowCount = ($ownerData | Measure-Object).Count
+        $rowCount = ($ownerDataArray | Measure-Object).Count
         $rowStart = 2
         $rowEnd = $rowStart + $rowCount - 1
         Apply-BadStyle -filePath $newFilePath -rowStart $rowStart -rowEnd $rowEnd
 
-        # Notify that the safe owner's file has been created
-        Write-Output "Created file for Safe Owner: $owner"
+        # Log the creation
+        Add-Content -Path $logFilePath -Value "Created file for Safe Owner: $owner"
     }
 }
 
 # Output completion message
 Write-Output "Writing completed"
+Add-Content -Path $logFilePath -Value "Writing completed"
